@@ -24,7 +24,7 @@ import { addPropertyControls, ControlType } from "framer"
 // CONFIGURATION — Update VERCEL_URL after deploying to Vercel
 // ─────────────────────────────────────────────────────────────────────────────
 
-const VERCEL_URL = "https://YOUR-VERCEL-URL.vercel.app"
+const VERCEL_URL = "https://tsarintegrationvr.vercel.app"
 const MODEL_VIEWER_CDN = "https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"
 
 // ─────────────────────────────────────────────────────────────────────────────
