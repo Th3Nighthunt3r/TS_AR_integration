@@ -1,99 +1,69 @@
-/**
- * Vercel Serverless Function: Upload GLB/GLTF Model
- *
- * Accepts multipart/form-data with a field named "model".
- * Stores files using Vercel Blob (free tier: up to 1GB).
- *
- * Required environment variable:
- *   BLOB_READ_WRITE_TOKEN  — set this in Vercel project settings
- *
- * Falls back to base64 data URL if BLOB_READ_WRITE_TOKEN is not set.
- */
-
 import { put } from "@vercel/blob"
 import formidable from "formidable"
 import { createReadStream, readFileSync } from "fs"
 import { extname } from "path"
 
 export const config = {
-    api: {
-        bodyParser: false,
-    },
+    api: { bodyParser: false },
 }
 
-const ALLOWED_EXTENSIONS = [".glb", ".gltf"]
-const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024 // 100MB
+const ALLOWED = [".glb", ".gltf"]
+const MAX_BYTES = 100 * 1024 * 1024
 
-function setCorsHeaders(res) {
+function cors(res) {
     res.setHeader("Access-Control-Allow-Origin", "*")
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
     res.setHeader("Access-Control-Allow-Headers", "Content-Type")
 }
 
-async function parseForm(req) {
-    const form = formidable({
-        maxFileSize: MAX_FILE_SIZE_BYTES,
-        keepExtensions: true,
-    })
+function parseForm(req) {
     return new Promise((resolve, reject) => {
-        form.parse(req, (err, fields, files) => {
+        const form = formidable({ maxFileSize: MAX_BYTES, keepExtensions: true })
+        form.parse(req, (err, _fields, files) => {
             if (err) reject(err)
-            else resolve({ fields, files })
+            else resolve(files)
         })
     })
 }
 
 export default async function handler(req, res) {
-    setCorsHeaders(res)
+    cors(res)
 
-    if (req.method === "OPTIONS") {
-        return res.status(200).end()
-    }
-
+    if (req.method === "OPTIONS") return res.status(200).end()
     if (req.method !== "POST") {
-        return res.status(405).json({ error: "Method not allowed. Use POST." })
+        return res.status(405).json({ error: "Use POST with multipart/form-data, field name: model" })
     }
 
-    let parsed
+    let files
     try {
-        parsed = await parseForm(req)
+        files = await parseForm(req)
     } catch (err) {
-        if (err.code === 1009) {
-            return res.status(413).json({
-                error: `File too large. Maximum allowed size is ${MAX_FILE_SIZE_BYTES / 1024 / 1024}MB.`,
-            })
-        }
-        return res.status(400).json({ error: "Failed to parse upload.", message: err.message })
+        const tooLarge = err.code === 1009 || err.message?.includes("maxFileSize")
+        return res.status(tooLarge ? 413 : 400).json({
+            error: tooLarge ? `File exceeds ${MAX_BYTES / 1024 / 1024}MB limit` : "Failed to parse upload",
+        })
     }
 
-    const { files } = parsed
     const file = Array.isArray(files.model) ? files.model[0] : files.model
-
     if (!file) {
-        return res.status(400).json({
-            error: "No file received. POST a multipart/form-data body with field name 'model'.",
-        })
+        return res.status(400).json({ error: "No file received. Use field name: model" })
     }
 
     const ext = extname(file.originalFilename || "").toLowerCase()
-    if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        return res.status(400).json({
-            error: `File type '${ext}' not allowed. Accepted types: ${ALLOWED_EXTENSIONS.join(", ")}`,
-        })
+    if (!ALLOWED.includes(ext)) {
+        return res.status(400).json({ error: `Only ${ALLOWED.join(", ")} files allowed` })
     }
 
     const contentType = ext === ".glb" ? "model/gltf-binary" : "model/gltf+json"
 
-    // If Vercel Blob token is configured, use persistent cloud storage
+    // Use Vercel Blob if token is set (persistent URLs)
     if (process.env.BLOB_READ_WRITE_TOKEN) {
         try {
-            const blobPath = `models/${Date.now()}-${file.originalFilename}`
-            const blob = await put(blobPath, createReadStream(file.filepath), {
-                access: "public",
-                contentType,
-                addRandomSuffix: false,
-            })
-
+            const blob = await put(
+                `models/${Date.now()}-${file.originalFilename}`,
+                createReadStream(file.filepath),
+                { access: "public", contentType, addRandomSuffix: false }
+            )
             return res.status(200).json({
                 success: true,
                 url: blob.url,
@@ -102,32 +72,24 @@ export default async function handler(req, res) {
                 storage: "vercel-blob",
             })
         } catch (err) {
-            console.error("Vercel Blob upload failed:", err)
-            // Fall through to base64 fallback
+            console.error("Blob upload failed:", err.message)
         }
     }
 
-    // Fallback: return base64 data URL (works without Blob token, best for files < 5MB)
+    // Fallback: base64 data URL (no storage setup needed, works for files < ~5MB)
     try {
-        const fileBuffer = readFileSync(file.filepath)
-        const base64 = fileBuffer.toString("base64")
-        const dataUrl = `data:${contentType};base64,${base64}`
-
-        const warningMsg =
-            file.size > 5 * 1024 * 1024
-                ? "File is large for a data URL. Set BLOB_READ_WRITE_TOKEN for persistent storage."
-                : null
-
+        const buf = readFileSync(file.filepath)
         return res.status(200).json({
             success: true,
-            url: dataUrl,
+            url: `data:${contentType};base64,${buf.toString("base64")}`,
             filename: file.originalFilename,
-            size: file.size,
-            storage: "base64-fallback",
-            ...(warningMsg && { warning: warningMsg }),
+            size: buf.length,
+            storage: "base64",
+            ...(file.size > 5 * 1024 * 1024 && {
+                warning: "Large file as base64. Add BLOB_READ_WRITE_TOKEN for better performance.",
+            }),
         })
     } catch (err) {
-        console.error("Base64 fallback failed:", err)
-        return res.status(500).json({ error: "Upload processing failed.", message: err.message })
+        return res.status(500).json({ error: "Failed to process file", message: err.message })
     }
 }
