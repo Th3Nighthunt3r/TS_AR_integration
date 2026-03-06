@@ -1,0 +1,26 @@
+{
+  "name": "ar-vr-viewer",
+  "version": "1.0.0",
+  "description": "AR/VR 3D Model Viewer - Vercel Backend API",
+  "private": true,
+  "engines": {
+    "node": ">=18.x"
+  },
+  "dependencies": {
+    "@vercel/blob": "^0.23.0",
+    "formidable": "^3.5.1"
+  },
+  "devDependencies": {
+    "vercel": "^37.0.0"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "optionalDependencies": {
+    "@gltf-transform/core": "^4.0.0",
+    "@gltf-transform/extensions": "^4.0.0",
+    "@gltf-transform/functions": "^4.0.0",
+    "draco3dgltf": "^1.5.7"
+  }
+}

@@ -1,0 +1,22 @@
+node_modules/
+.vercel/
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test model files (don't commit large binaries)
+*.glb
+*.gltf
+/tmp/
+
+# Build artifacts
+dist/
+.next/
